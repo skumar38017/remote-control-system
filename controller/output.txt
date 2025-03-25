@@ -1,0 +1,6 @@
+The TreeView widget in the GUI will display the detected devices as follows:
+IP Address	Device Name	OS Type	NIC Type	MAC Address	Status
+192.168.1.1	Router	Linux	Ethernet/Wi-Fi	00:11:22:33:44:55	Online
+192.168.1.2	Laptop	Windows	Wi-Fi	AA:BB:CC:DD:EE:FF	Online
+192.168.1.3	Server	Linux	Ethernet/Wi-Fi	11:22:33:44:55:66	Online
+192.168.1.4	Smartphone	Android	Wi-Fi	77:88:99:AA:BB:CC	Online

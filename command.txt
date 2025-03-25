@@ -1,0 +1,3 @@
+uvicorn controller_backend:app --reload
+
+python controller/controller_ui.py

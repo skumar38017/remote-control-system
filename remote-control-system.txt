@@ -1,0 +1,11 @@
+remote-control-system/
+├── controller/
+│   ├── controller_backend.py       # FastAPI backend for the controller
+│   ├── controller_ui.py            # Tkinter UI for the controller
+│   ├── requirements.txt 
+
+├── target/
+│   ├── target_client.py            # Target client application
+│   ├── wol.py                      # Wake-on-LAN utility
+│   ├── requirements.txt            # Python dependencies for the target
+├── README.md     

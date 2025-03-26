@@ -3,7 +3,7 @@
 # controller/Config.py
 
 import redis
-from settings import Settings
+from controller.settings import Settings
 
 # initialize Settings
 Settings = Settings()

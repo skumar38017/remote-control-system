@@ -5,8 +5,8 @@ from datetime import datetime
 import uuid
 import threading
 import time
-from redis_client import RedisManager
-from controller_backend import (
+from controller.redis_client import RedisManager
+from controller.controller_backend import (
     get_device_ip_address, 
     scan_network, 
     calculate_network_range,
@@ -51,8 +51,7 @@ def hide_loading_indicator():
         loading_label.destroy()
 
 def update_treeview(devices_list):
-    """Updates the TreeView with devices in the specified format."""
-    # Clear the treeview
+    """Updates the TreeView with properly formatted device information"""
     tree.delete(*tree.get_children())
     
     if not devices_list:
@@ -60,45 +59,40 @@ def update_treeview(devices_list):
         return
     
     for device in devices_list:
-        # Get device information
         ip = device.get('ip_address', 'Unknown')
         name = device.get('device_name', 'Unknown')
         os_type = device.get('os_type', 'Unknown')
         mac = device.get('device_mac', 'Unknown')
         status = device.get('connection_status', 'Unknown')
+        device_type = device.get('connection_type', 'Unknown')
         
-        # Determine NIC Type based on OS and device type
+        # Determine NIC Type
         nic_type = "Unknown"
-        if 'Android' in os_type:
+        if device_type == "Android Device":
             nic_type = "Wi-Fi"
-        elif 'Windows' in os_type:
-            nic_type = "Wi-Fi" if 'Wireless' in str(device.get('connection_type', '')) else "Ethernet"
-        elif 'Linux' in os_type:
-            if 'Router' in str(device.get('connection_type', '')):
-                nic_type = "Router"
-            elif 'Wireless AP' in str(device.get('connection_type', '')):
-                nic_type = "Wireless AP"
-            else:
-                nic_type = "Ethernet/Wi-Fi"
+        elif device_type == "Windows PC":
+            nic_type = "Ethernet" if 'eth' in str(name).lower() else "Wi-Fi"
+        elif device_type in ["Router", "Network Switch"]:
+            nic_type = "Wired"
+        elif device_type in ["Linux Device", "Server"]:
+            nic_type = "Ethernet/Wi-Fi"
+        elif device_type == "Printer":
+            nic_type = "Network"
         
         # Clean up OS type display
-        if 'Linux' in os_type:
-            os_type = "Linux"
-        elif 'Windows' in os_type:
+        if 'Windows' in os_type:
             os_type = "Windows"
         elif 'Android' in os_type:
             os_type = "Android"
-        
-        # Clean up device name
-        if name == 'Unknown' and 'Router' in nic_type:
-            name = "Router"
-        elif name == 'Unknown' and 'Wireless AP' in nic_type:
-            name = "Wireless AP"
+        elif 'Linux' in os_type:
+            os_type = "Linux"
+        elif 'Mac' in os_type or 'Darwin' in os_type:
+            os_type = "macOS"
         
         # Insert device with formatted values
         tree.insert('', 'end', values=(ip, name, os_type, nic_type, mac, status))
-
-def perform_scan():
+        
+def perform_scan(force_refresh=False):
     """Performs the network scan in a thread."""
     global devices, stop_scan_flag
     
@@ -113,13 +107,17 @@ def perform_scan():
             ))
             return
         
-        # Check Redis first
-        cached_data = redis_manager.get_devices(network_range)
+        # Clear cache if forcing refresh
+        if force_refresh:
+            redis_manager.clear_cache(network_range)
         
-        if cached_data and time.time() - cached_data['timestamp'] < 300:  # 5 minute cache
-            devices = cached_data['devices']
-            root.after(0, lambda: update_treeview(devices))
-            return
+        # Check Redis first (unless forcing refresh)
+        if not force_refresh:
+            cached_data = redis_manager.get_devices(network_range)
+            if cached_data and time.time() - cached_data['timestamp'] < 300:  # 5 minute cache
+                devices = cached_data['devices']
+                root.after(0, lambda: update_treeview(devices))
+                return
         
         # Perform new scan
         show_loading_indicator()
@@ -136,9 +134,9 @@ def perform_scan():
         error_message = f"An error occurred during scanning: {str(scan_error)}"
         root.after(0, lambda: messagebox.showerror("Scan Error", error_message))
     finally:
-        root.after(0, hide_loading_indicator)
+        root.after(0, hide_loading_indicator())
 
-def scan_and_show_devices():
+def scan_and_show_devices(force_refresh=False):
     """Starts the scan in a separate thread."""
     global scanning_thread, stop_scan_flag
     
@@ -148,7 +146,10 @@ def scan_and_show_devices():
         messagebox.showinfo("Info", "Scan already in progress")
         return
     
-    scanning_thread = threading.Thread(target=perform_scan, daemon=True)
+    scanning_thread = threading.Thread(
+        target=lambda: perform_scan(force_refresh),
+        daemon=True
+    )
     scanning_thread.start()
 
 def on_show_list_button_click():
@@ -156,8 +157,8 @@ def on_show_list_button_click():
     scan_and_show_devices()
 
 def on_refresh_button_click():
-    """Handler for refresh button."""
-    scan_and_show_devices()
+    """Handler for refresh button - forces fresh scan"""
+    scan_and_show_devices(force_refresh=True)
 
 def on_cancel_button_click():
     """Exits the application."""

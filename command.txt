@@ -1,3 +1,6 @@
 uvicorn controller_backend:app --reload
 
 python controller/controller_ui.py
+
+export PYTHONPATH="${PYTHONPATH}:/home/tagglabs/Videos/remote-control-system"
+python main.py

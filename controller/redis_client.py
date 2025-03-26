@@ -1,9 +1,7 @@
-# redis.py
-
-# redis.py
+# controller/redis_client.py
 import json
 import time
-from Config import Config
+from controller.Config import Config
 
 class RedisManager:
     def __init__(self):
@@ -44,3 +42,12 @@ class RedisManager:
     def get_client(self):
         """Returns the Redis client instance."""
         return self.redis_client
+
+    def clear_cache(self, network_range):
+        """Clears cached data for a network range"""
+        try:
+            self.redis_client.delete(f"devices:{network_range}")
+            return True
+        except Exception as e:
+            print(f"Redis clear error: {e}")
+            return False

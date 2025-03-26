@@ -5,14 +5,15 @@ from datetime import datetime
 import uuid
 import threading
 import time
+from redis_client import RedisManager
 from controller_backend import (
     get_device_ip_address, 
     scan_network, 
     calculate_network_range,
-    get_redis_client,
-    get_devices_from_redis,
-    store_devices_in_redis
 )
+
+# Initialize Redis Manager
+redis_manager = RedisManager()
 
 # Global variables
 devices = []
@@ -59,32 +60,43 @@ def update_treeview(devices_list):
         return
     
     for device in devices_list:
-        # Format the connection type based on OS type
+        # Get device information
+        ip = device.get('ip_address', 'Unknown')
+        name = device.get('device_name', 'Unknown')
         os_type = device.get('os_type', 'Unknown')
-        connection_type = device.get('connection_type', 'Unknown')
+        mac = device.get('device_mac', 'Unknown')
+        status = device.get('connection_status', 'Unknown')
         
-        # Improve connection type display
+        # Determine NIC Type based on OS and device type
+        nic_type = "Unknown"
         if 'Android' in os_type:
-            connection_type = "Wi-Fi"
+            nic_type = "Wi-Fi"
         elif 'Windows' in os_type:
-            connection_type = "Wi-Fi" if 'Wireless' in connection_type else "Ethernet"
+            nic_type = "Wi-Fi" if 'Wireless' in str(device.get('connection_type', '')) else "Ethernet"
         elif 'Linux' in os_type:
-            if 'Router' in connection_type:
-                connection_type = "Router"
-            elif 'Wireless AP' in connection_type:
-                connection_type = "Wireless AP"
+            if 'Router' in str(device.get('connection_type', '')):
+                nic_type = "Router"
+            elif 'Wireless AP' in str(device.get('connection_type', '')):
+                nic_type = "Wireless AP"
             else:
-                connection_type = "Ethernet/Wi-Fi"
+                nic_type = "Ethernet/Wi-Fi"
+        
+        # Clean up OS type display
+        if 'Linux' in os_type:
+            os_type = "Linux"
+        elif 'Windows' in os_type:
+            os_type = "Windows"
+        elif 'Android' in os_type:
+            os_type = "Android"
+        
+        # Clean up device name
+        if name == 'Unknown' and 'Router' in nic_type:
+            name = "Router"
+        elif name == 'Unknown' and 'Wireless AP' in nic_type:
+            name = "Wireless AP"
         
         # Insert device with formatted values
-        tree.insert('', 'end', values=(
-            device.get('ip_address', 'Unknown'),
-            device.get('device_name', 'Unknown'),
-            os_type,
-            connection_type,
-            device.get('device_mac', 'Unknown'),
-            device.get('connection_status', 'Unknown')
-        ))
+        tree.insert('', 'end', values=(ip, name, os_type, nic_type, mac, status))
 
 def perform_scan():
     """Performs the network scan in a thread."""
@@ -102,8 +114,7 @@ def perform_scan():
             return
         
         # Check Redis first
-        redis_client = get_redis_client()
-        cached_data = get_devices_from_redis(redis_client, network_range)
+        cached_data = redis_manager.get_devices(network_range)
         
         if cached_data and time.time() - cached_data['timestamp'] < 300:  # 5 minute cache
             devices = cached_data['devices']
@@ -113,18 +124,17 @@ def perform_scan():
         # Perform new scan
         show_loading_indicator()
         
-        devices = scan_network(ip_address)
+        # Pass a lambda that checks the stop flag
+        devices = scan_network(ip_address, stop_flag=lambda: stop_scan_flag)
         
-        if devices:
-            store_devices_in_redis(redis_client, network_range, devices)
+        if devices and not stop_scan_flag:  # Only store if not cancelled
+            redis_manager.store_devices(network_range, devices)
         
         root.after(0, lambda: update_treeview(devices))
         
-    except Exception as e:
-        root.after(0, lambda: messagebox.showerror(
-            "Scan Error", 
-            f"An error occurred during scanning: {str(e)}"
-        ))
+    except Exception as scan_error:
+        error_message = f"An error occurred during scanning: {str(scan_error)}"
+        root.after(0, lambda: messagebox.showerror("Scan Error", error_message))
     finally:
         root.after(0, hide_loading_indicator)
 
@@ -160,9 +170,10 @@ def on_cancel_button_click():
 def on_cancel_scan_button_click():
     """Cancels the current scan."""
     global stop_scan_flag
-    stop_scan_flag = True
-    hide_loading_indicator()
-    messagebox.showinfo("Info", "Scan cancelled")
+    if messagebox.askokcancel("Confirm", "Are you sure you want to cancel the scan?"):
+        stop_scan_flag = True
+        hide_loading_indicator()
+        messagebox.showinfo("Info", "Scan cancelled")
 
 def create_ui():
     """Creates and configures the main UI."""
@@ -199,12 +210,12 @@ def create_ui():
     tree.heading('MAC Address', text='MAC Address')
     tree.heading('Status', text='Status')
     
-    tree.column('IP Address', width=150, anchor=tk.CENTER)
-    tree.column('Device Name', width=150, anchor=tk.CENTER)
-    tree.column('OS Type', width=150, anchor=tk.CENTER)
-    tree.column('NIC Type', width=150, anchor=tk.CENTER)
+    tree.column('IP Address', width=120, anchor=tk.CENTER)
+    tree.column('Device Name', width=120, anchor=tk.CENTER)
+    tree.column('OS Type', width=100, anchor=tk.CENTER)
+    tree.column('NIC Type', width=120, anchor=tk.CENTER)
     tree.column('MAC Address', width=150, anchor=tk.CENTER)
-    tree.column('Status', width=100, anchor=tk.CENTER)
+    tree.column('Status', width=80, anchor=tk.CENTER)
     
     tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
     
